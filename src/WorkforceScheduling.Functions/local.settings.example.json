@@ -1,0 +1,15 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated",
+    "Entra__TenantId": "REPLACE_WITH_TENANT_GUID",
+    "Entra__Audience": "REPLACE_WITH_API_IDENTIFIER_URI",
+    "Workforce__DataverseUrl": "https://REPLACE_WITH_ENVIRONMENT.crm.dynamics.com",
+    "Workforce__DataverseApiVersion": "v9.2",
+    "Workforce__GraphScope": "https://graph.microsoft.com/.default",
+    "Workforce__LockStorageServiceUri": "https://REPLACE_WITH_STORAGE_ACCOUNT.blob.core.windows.net",
+    "Workforce__ScheduleProvisioningTimeoutMinutes": "REPLACE_WITH_G2_APPROVED_VALUE",
+    "Workforce__SchedulePollingIntervalSeconds": "REPLACE_WITH_G2_APPROVED_VALUE"
+  }
+}

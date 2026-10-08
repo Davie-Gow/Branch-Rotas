@@ -1,0 +1,50 @@
+{
+  "status": "PROPOSED_PENDING_PLATFORM_SECURITY_APPROVAL",
+  "resource": {
+    "displayName": "Microsoft Graph",
+    "appId": "00000003-0000-0000-c000-000000000000"
+  },
+  "permissions": [
+    {
+      "name": "User.Read.All",
+      "type": "Role",
+      "approvalStatus": "Pending",
+      "operations": ["GET /users"],
+      "justification": "Search enabled internal Entra member accounts and revalidate a selected account before adding it to a branch group.",
+      "reference": "https://learn.microsoft.com/graph/api/user-list?view=graph-rest-1.0"
+    },
+    {
+      "name": "GroupMember.ReadWrite.All",
+      "type": "Role",
+      "approvalStatus": "Pending",
+      "operations": ["GET /groups/{id}/members/{id}", "POST /groups/{id}/members/$ref", "DELETE /groups/{id}/members/{id}/$ref"],
+      "justification": "Idempotently read and change ordinary membership in the existing branch Microsoft 365 group.",
+      "reference": "https://learn.microsoft.com/graph/api/group-post-members?view=graph-rest-1.0"
+    },
+    {
+      "name": "Group.ReadWrite.All",
+      "type": "Role",
+      "approvalStatus": "Pending",
+      "operations": ["PUT /groups/{id}/team"],
+      "justification": "Create a Team only for an existing approved branch group that does not yet have one.",
+      "reference": "https://learn.microsoft.com/graph/api/team-put?view=graph-rest-1.0"
+    },
+    {
+      "name": "Team.ReadBasic.All",
+      "type": "Role",
+      "approvalStatus": "Pending",
+      "operations": ["GET /teams/{id}"],
+      "justification": "Read only the basic Team identity to reconcile existing Teams without creating duplicates.",
+      "reference": "https://learn.microsoft.com/graph/api/team-get?view=graph-rest-1.0"
+    },
+    {
+      "name": "Schedule.ReadWrite.All",
+      "type": "Role",
+      "approvalStatus": "Pending",
+      "operations": ["GET /teams/{id}/schedule", "PUT /teams/{id}/schedule"],
+      "justification": "Read and initialize the native Shifts schedule for an explicitly configured branch Team.",
+      "reference": "https://learn.microsoft.com/graph/api/team-put-schedule?view=graph-rest-1.0"
+    }
+  ],
+  "deploymentGuard": "Terraform graph_permission_approval remains false until an authorized platform/security reviewer records approval. This file is a proposal, not an approval or consent grant."
+}

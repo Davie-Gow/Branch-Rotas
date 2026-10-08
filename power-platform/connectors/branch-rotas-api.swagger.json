@@ -1,0 +1,135 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "Branch Rotas Workforce API",
+    "description": "Authenticated Power Apps control-plane API. Server-side branch authorization applies to every operation.",
+    "version": "1.0"
+  },
+  "host": "REPLACE_WITH_FUNCTION_APP_HOSTNAME",
+  "basePath": "/api",
+  "schemes": ["https"],
+  "consumes": ["application/json"],
+  "produces": ["application/json"],
+  "securityDefinitions": {
+    "oauth2": {
+      "type": "oauth2",
+      "flow": "accessCode",
+      "authorizationUrl": "https://login.microsoftonline.com/REPLACE_WITH_TENANT_ID/oauth2/v2.0/authorize",
+      "tokenUrl": "https://login.microsoftonline.com/REPLACE_WITH_TENANT_ID/oauth2/v2.0/token",
+      "scopes": {
+        "REPLACE_WITH_API_IDENTIFIER_URI/access_as_user": "Call the Branch Rotas API as the signed-in user."
+      }
+    }
+  },
+  "security": [{ "oauth2": ["REPLACE_WITH_API_IDENTIFIER_URI/access_as_user"] }],
+  "paths": {
+    "/branches/{branchId}/users": {
+      "get": {
+        "operationId": "SearchBranchUsers",
+        "summary": "Search enabled internal users for an authorized branch",
+        "parameters": [
+          { "name": "branchId", "in": "path", "required": true, "type": "string" },
+          { "name": "q", "in": "query", "required": true, "type": "string", "minLength": 2, "maxLength": 80 }
+        ],
+        "responses": {
+          "200": {
+            "description": "Minimum user profile results",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "objectId": { "type": "string", "format": "uuid" },
+                  "displayName": { "type": "string" },
+                  "mail": { "type": "string", "x-nullable": true },
+                  "userPrincipalName": { "type": "string", "x-nullable": true }
+                }
+              }
+            }
+          },
+          "400": { "description": "Invalid branch identifier or search query" },
+          "401": { "description": "Unauthenticated" },
+          "403": { "description": "Requester is not authorized for the branch" }
+        }
+      }
+    },
+    "/branches/{branchId}/membership-operations": {
+      "post": {
+        "operationId": "RequestMembershipChange",
+        "summary": "Request an idempotent add/remove from the existing branch group",
+        "parameters": [
+          { "name": "branchId", "in": "path", "required": true, "type": "string" },
+          { "name": "Idempotency-Key", "in": "header", "required": true, "type": "string", "format": "uuid" },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "type": "object",
+              "required": ["userObjectId", "action"],
+              "properties": {
+                "userObjectId": { "type": "string", "format": "uuid" },
+                "action": { "type": "string", "enum": ["Add", "Remove"] }
+              }
+            }
+          }
+        ],
+        "responses": {
+          "202": { "description": "Operation accepted", "schema": { "$ref": "#/definitions/AcceptedOperation" } },
+          "400": { "description": "Invalid request" },
+          "401": { "description": "Unauthenticated" },
+          "403": { "description": "Requester is not authorized for the branch" },
+          "409": { "description": "Idempotency key was reused for a different command" }
+        }
+      }
+    },
+    "/branches/{branchId}/provisioning-operations": {
+      "post": {
+        "operationId": "RequestBranchReconciliation",
+        "summary": "Request Team and Shifts reconciliation for an authorized branch",
+        "parameters": [
+          { "name": "branchId", "in": "path", "required": true, "type": "string" },
+          { "name": "Idempotency-Key", "in": "header", "required": true, "type": "string", "format": "uuid" }
+        ],
+        "responses": {
+          "202": { "description": "Operation accepted", "schema": { "$ref": "#/definitions/AcceptedOperation" } },
+          "400": { "description": "Invalid request" },
+          "401": { "description": "Unauthenticated" },
+          "403": { "description": "Requester is not authorized for the branch" }
+        }
+      }
+    },
+    "/operations/{operationId}": {
+      "get": {
+        "operationId": "GetOperationStatus",
+        "summary": "Read the caller's operation status",
+        "parameters": [{ "name": "operationId", "in": "path", "required": true, "type": "string", "format": "uuid" }],
+        "responses": {
+          "200": { "description": "Safe operation status", "schema": { "$ref": "#/definitions/OperationStatus" } },
+          "401": { "description": "Unauthenticated" },
+          "404": { "description": "Operation not found" }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "AcceptedOperation": {
+      "type": "object",
+      "properties": {
+        "operationId": { "type": "string", "format": "uuid" },
+        "status": { "type": "string" }
+      }
+    },
+    "OperationStatus": {
+      "type": "object",
+      "properties": {
+        "operationId": { "type": "string", "format": "uuid" },
+        "branchId": { "type": "string" },
+        "operationType": { "type": "string" },
+        "state": { "type": "string" },
+        "correlationId": { "type": "string" },
+        "errorCategory": { "type": "string", "x-nullable": true }
+      }
+    }
+  }
+}
