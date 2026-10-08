@@ -1,0 +1,127 @@
+trigger:
+  branches:
+    include:
+      - main
+
+pr:
+  branches:
+    include:
+      - main
+
+parameters:
+  - name: g2GovernanceApproved
+    displayName: G2 governance approval recorded
+    type: boolean
+    default: false
+  - name: graphPermissionApproval
+    displayName: Graph permission proposal approved by platform/security
+    type: boolean
+    default: false
+
+stages:
+  - stage: Validate
+    displayName: Build and validate
+    jobs:
+      - job: Build
+        pool:
+          vmImage: windows-latest
+        steps:
+          - task: UseDotNet@2
+            inputs:
+              packageType: sdk
+              version: 10.x
+          - task: TerraformInstaller@1
+            inputs:
+              terraformVersion: 1.9.8
+          - powershell: dotnet test tests\WorkforceScheduling.Domain.Tests\WorkforceScheduling.Domain.Tests.csproj --configuration Release
+            displayName: Test domain authorization policies
+          - powershell: dotnet test tests\WorkforceScheduling.Functions.Tests\WorkforceScheduling.Functions.Tests.csproj --configuration Release
+            displayName: Test Functions authorization boundary
+          - powershell: dotnet build src\WorkforceScheduling.Functions\WorkforceScheduling.Functions.csproj --configuration Release
+            displayName: Build Functions host and adapters
+          - powershell: |
+              terraform -chdir=infra\terraform fmt -check -recursive
+              terraform -chdir=infra\terraform init -backend=false -input=false
+              terraform -chdir=infra\terraform validate
+            displayName: Validate Terraform
+          - powershell: dotnet publish src\WorkforceScheduling.Functions\WorkforceScheduling.Functions.csproj --configuration Release --output $(Build.ArtifactStagingDirectory)\function
+            displayName: Publish Functions package
+          - task: ArchiveFiles@2
+            inputs:
+              rootFolderOrFile: $(Build.ArtifactStagingDirectory)\function
+              includeRootFolder: false
+              archiveType: zip
+              archiveFile: $(Build.ArtifactStagingDirectory)\function.zip
+              replaceExistingArchive: true
+          - task: PublishPipelineArtifact@1
+            inputs:
+              targetPath: $(Build.ArtifactStagingDirectory)\function.zip
+              artifact: function
+          - powershell: |
+              $ErrorActionPreference = 'Stop'
+              Get-ChildItem -Path . -Recurse -Include *.json,*.csproj | ForEach-Object {
+                if ($_.Extension -eq '.json') {
+                  Get-Content -Raw $_.FullName | ConvertFrom-Json | Out-Null
+                } else {
+                  [xml](Get-Content -Raw $_.FullName) | Out-Null
+                }
+              }
+            displayName: Validate JSON and project XML
+
+  - stage: PromoteProduction
+    displayName: Promote approved production infrastructure
+    dependsOn: Validate
+    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'), eq('${{ parameters.g2GovernanceApproved }}', 'true'))
+    jobs:
+      - deployment: ApplyTerraform
+        displayName: Apply Terraform behind environment approval
+        environment: workforce-prod
+        pool:
+          vmImage: ubuntu-latest
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - task: TerraformInstaller@1
+                  inputs:
+                    terraformVersion: 1.9.8
+                - task: AzureCLI@2
+                  displayName: Terraform plan and apply
+                  inputs:
+                    azureSubscription: $(AzureServiceConnection)
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    inlineScript: |
+                      set -euo pipefail
+                      terraform -chdir=infra/terraform init \
+                        -backend-config="resource_group_name=$(TerraformStateResourceGroup)" \
+                        -backend-config="storage_account_name=$(TerraformStateStorageAccount)" \
+                        -backend-config="container_name=$(TerraformStateContainer)" \
+                        -backend-config="key=branch-rotas-prod.tfstate"
+                      terraform -chdir=infra/terraform validate
+                      terraform -chdir=infra/terraform plan \
+                        -out="$(Build.ArtifactStagingDirectory)/workforce.tfplan" \
+                        -var="resource_group_name=$(WorkforceResourceGroup)" \
+                        -var="location=$(AzureLocation)" \
+                        -var="function_app_name=$(FunctionAppName)" \
+                        -var="storage_account_name=$(FunctionStorageAccountName)" \
+                        -var="entra_tenant_id=$(EntraTenantId)" \
+                        -var="api_identifier_uri=$(ApiIdentifierUri)" \
+                        -var="dataverse_url=$(DataverseUrl)" \
+                        -var="schedule_provisioning_timeout_minutes=$(ScheduleProvisioningTimeoutMinutes)" \
+                        -var="schedule_polling_interval_seconds=$(SchedulePollingIntervalSeconds)" \
+                        -var="log_retention_days=$(LogRetentionDays)" \
+                        -var="graph_permission_approval=${{ parameters.graphPermissionApproval }}"
+                      terraform -chdir=infra/terraform apply -auto-approve "$(Build.ArtifactStagingDirectory)/workforce.tfplan"
+                - task: DownloadPipelineArtifact@2
+                  inputs:
+                    artifact: function
+                    path: $(Pipeline.Workspace)/function
+                - task: AzureFunctionApp@2
+                  displayName: Deploy .NET isolated Functions package
+                  inputs:
+                    azureSubscription: $(AzureServiceConnection)
+                    appType: functionAppLinux
+                    appName: $(FunctionAppName)
+                    package: $(Pipeline.Workspace)/function/function.zip
+                    deploymentMethod: runFromPackage
